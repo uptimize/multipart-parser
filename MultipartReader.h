@@ -3,6 +3,7 @@
 
 #include <map>
 #include <utility>
+#include <functional>
 #include "MultipartParser.h"
 
 class MultipartHeaders: public std::multimap<std::string, std::string> {
@@ -21,24 +22,23 @@ public:
 
 class MultipartReader {
 public:
-	typedef void (*PartBeginCallback)(const MultipartHeaders &headers, void *userData);
-	typedef void (*PartDataCallback)(const char *buffer, size_t size, void *userData);
-	typedef void (*Callback)(void *userData);
+  using PartBeginCallback = std::function<void(const MultipartHeaders &)>;
+  using PartDataCallback = std::function<void(const char *, size_t)>;
+  using Callback = std::function<void()>;
 
 private:
 	MultipartParser parser;
 	bool headersProcessed;
 	MultipartHeaders currentHeaders;
 	std::string currentHeaderName, currentHeaderValue;
-	
+
 	void resetReaderCallbacks() {
-		onPartBegin = NULL;
-		onPartData  = NULL;
-		onPartEnd   = NULL;
-		onEnd       = NULL;
-        userData    = NULL;
+		onPartBegin = nullptr;
+		onPartData  = nullptr;
+		onPartEnd   = nullptr;
+		onEnd       = nullptr;
 	}
-	
+
 	void setParserCallbacks() {
 		parser.onPartBegin   = cbPartBegin;
 		parser.onHeaderField = cbHeaderField;
@@ -50,7 +50,7 @@ private:
 		parser.onEnd         = cbEnd;
 		parser.userData      = this;
 	}
-	
+
 	static void cbPartBegin(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
 		self->headersProcessed = false;
@@ -58,17 +58,17 @@ private:
 		self->currentHeaderName.clear();
 		self->currentHeaderValue.clear();
 	}
-	
+
 	static void cbHeaderField(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
 		self->currentHeaderName.append(buffer + start, end - start);
 	}
-	
+
 	static void cbHeaderValue(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
 		self->currentHeaderValue.append(buffer + start, end - start);
 	}
-	
+
 	static void cbHeaderEnd(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
 		self->currentHeaders.insert(std::make_pair(self->currentHeaderName,
@@ -76,80 +76,74 @@ private:
 		self->currentHeaderName.clear();
 		self->currentHeaderValue.clear();
 	}
-	
+
 	static void cbHeadersEnd(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
-		if (self->onPartBegin != NULL) {
-			self->onPartBegin(self->currentHeaders, self->userData);
+		if (self->onPartBegin != nullptr) {
+			self->onPartBegin(self->currentHeaders);
 		}
 		self->currentHeaders.clear();
 		self->currentHeaderName.clear();
 		self->currentHeaderValue.clear();
 	}
-	
+
 	static void cbPartData(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
-		if (self->onPartData != NULL) {
-			self->onPartData(buffer + start, end - start, self->userData);
+		if (self->onPartData != nullptr) {
+			self->onPartData(buffer + start, end - start);
 		}
 	}
-	
+
 	static void cbPartEnd(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
-		if (self->onPartEnd != NULL) {
-			self->onPartEnd(self->userData);
+		if (self->onPartEnd != nullptr) {
+			self->onPartEnd();
 		}
 	}
-	
+
 	static void cbEnd(const char *buffer, size_t start, size_t end, void *userData) {
 		MultipartReader *self = (MultipartReader *) userData;
-		if (self->onEnd != NULL) {
-			self->onEnd(self->userData);
+		if (self->onEnd != nullptr) {
+			self->onEnd();
 		}
 	}
-	
+
 public:
 	PartBeginCallback onPartBegin;
 	PartDataCallback onPartData;
 	Callback onPartEnd;
 	Callback onEnd;
-    void *userData;
-	
-	MultipartReader() {
-		resetReaderCallbacks();
-		setParserCallbacks();
-	}
-	
+
 	MultipartReader(const std::string &boundary): parser(boundary) {
 		resetReaderCallbacks();
 		setParserCallbacks();
 	}
-	
+
 	void reset() {
 		parser.reset();
 	}
-	
+
 	void setBoundary(const std::string &boundary) {
 		parser.setBoundary(boundary);
 	}
-	
+
 	size_t feed(const char *buffer, size_t len) {
 		return parser.feed(buffer, len);
 	}
-	
+
 	bool succeeded() const {
 		return parser.succeeded();
 	}
-	
+
 	bool hasError() const {
 		return parser.hasError();
 	}
-	
+
 	bool stopped() const {
 		return parser.stopped();
 	}
-	
-	const char *getErrorMessage() const {
+
+  std::string getErrorMessage() const {
 		return parser.getErrorMessage();
 	}
 };
